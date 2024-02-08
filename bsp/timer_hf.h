@@ -17,6 +17,22 @@
 
 //=========================== defines ==========================================
 
+#if defined(NRF5340_XXAA)
+#if defined(NRF_APPLICATION)
+#define TIMER_HF (NRF_TIMER2_S)  ///< Backend TIMER peripheral used by the timer
+#elif defined(NRF_NETWORK)
+#define TIMER_HF (NRF_TIMER2_NS)  ///< Backend TIMER peripheral used by the timer
+#endif
+#define TIMER_HF_IRQ      (TIMER2_IRQn)        ///< IRQ corresponding to the TIMER used
+#define TIMER_HF_ISR      (TIMER2_IRQHandler)  ///< ISR function handler corresponding to the TIMER used
+#define TIMER_HF_CB_CHANS (TIMER2_CC_NUM - 1)  ///< Number of channels that can be used for periodic callbacks
+#else
+#define TIMER_HF          (NRF_TIMER4)         ///< Backend TIMER peripheral used by the timer
+#define TIMER_HF_IRQ      (TIMER4_IRQn)        ///< IRQ corresponding to the TIMER used
+#define TIMER_HF_ISR      (TIMER4_IRQHandler)  ///< ISR function handler corresponding to the TIMER used
+#define TIMER_HF_CB_CHANS (TIMER4_CC_NUM - 1)  ///< Number of channels that can be used for periodic callbacks
+#endif
+
 typedef void (*timer_hf_cb_t)(void);  ///< Callback function prototype, it is called when the timer fires an event
 
 //=========================== prototypes =======================================
