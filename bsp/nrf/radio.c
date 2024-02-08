@@ -153,6 +153,10 @@ void db_radio_init(radio_cb_t callback, db_radio_ble_mode_t mode) {
     // TODO: Re add if it turns out it's necessary
     // NRF_RADIO->TIFS = RADIO_TIFS;
 
+    // Enable Fast TX Ramp Up
+    NRF_RADIO->MODECNF0 = (RADIO_MODECNF0_RU_Fast << RADIO_MODECNF0_RU_Pos) |
+                          (RADIO_MODECNF0_DTX_Center << RADIO_MODECNF0_DTX_Pos);
+
     // CRC Config
     NRF_RADIO->CRCCNF  = (RADIO_CRCCNF_LEN_Three << RADIO_CRCCNF_LEN_Pos) | (RADIO_CRCCNF_SKIPADDR_Skip << RADIO_CRCCNF_SKIPADDR_Pos);  // Checksum uses 3 bytes, and is enabled.
     NRF_RADIO->CRCINIT = 0xFFFFUL;                                                                                                      // initial value
