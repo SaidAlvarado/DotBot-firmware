@@ -150,7 +150,8 @@ void db_radio_init(radio_cb_t callback, db_radio_ble_mode_t mode) {
     NRF_RADIO->RXADDRESSES = (RADIO_RXADDRESSES_ADDR0_Enabled << RADIO_RXADDRESSES_ADDR0_Pos);
 
     // Inter frame spacing in us
-    NRF_RADIO->TIFS = RADIO_TIFS;
+    // TODO: Re add if it turns out it's necessary
+    // NRF_RADIO->TIFS = RADIO_TIFS;
 
     // CRC Config
     NRF_RADIO->CRCCNF  = (RADIO_CRCCNF_LEN_Three << RADIO_CRCCNF_LEN_Pos) | (RADIO_CRCCNF_SKIPADDR_Skip << RADIO_CRCCNF_SKIPADDR_Pos);  // Checksum uses 3 bytes, and is enabled.
