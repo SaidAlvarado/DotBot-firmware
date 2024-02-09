@@ -25,17 +25,21 @@
 
 /// Command type
 typedef enum {
-    DB_PROTOCOL_CMD_MOVE_RAW  = 0,   ///< Move raw command type
-    DB_PROTOCOL_CMD_RGB_LED   = 1,   ///< RGB LED command type
-    DB_PROTOCOL_LH2_RAW_DATA  = 2,   ///< Lighthouse 2 raw data
-    DB_PROTOCOL_LH2_LOCATION  = 3,   ///< Lighthouse processed locations
-    DB_PROTOCOL_ADVERTISEMENT = 4,   ///< DotBot advertisements
-    DB_PROTOCOL_GPS_LOCATION  = 5,   ///< GPS data from SailBot
-    DB_PROTOCOL_DOTBOT_DATA   = 6,   ///< DotBot specific data (for now location and direction)
-    DB_PROTOCOL_CONTROL_MODE  = 7,   ///< Robot remote control mode (automatic or manual)
-    DB_PROTOCOL_LH2_WAYPOINTS = 8,   ///< List of LH2 waypoints to follow
-    DB_PROTOCOL_GPS_WAYPOINTS = 9,   ///< List of GPS waypoints to follow
-    DB_PROTOCOL_SAILBOT_DATA  = 10,  ///< SailBot specific data (for now GPS and direction)
+    DB_PROTOCOL_CMD_MOVE_RAW      = 0,   ///< Move raw command type
+    DB_PROTOCOL_CMD_RGB_LED       = 1,   ///< RGB LED command type
+    DB_PROTOCOL_LH2_RAW_DATA      = 2,   ///< Lighthouse 2 raw data
+    DB_PROTOCOL_LH2_LOCATION      = 3,   ///< Lighthouse processed locations
+    DB_PROTOCOL_ADVERTISEMENT     = 4,   ///< DotBot advertisements
+    DB_PROTOCOL_GPS_LOCATION      = 5,   ///< GPS data from SailBot
+    DB_PROTOCOL_DOTBOT_DATA       = 6,   ///< DotBot specific data (for now location and direction)
+    DB_PROTOCOL_CONTROL_MODE      = 7,   ///< Robot remote control mode (automatic or manual)
+    DB_PROTOCOL_LH2_WAYPOINTS     = 8,   ///< List of LH2 waypoints to follow
+    DB_PROTOCOL_GPS_WAYPOINTS     = 9,   ///< List of GPS waypoints to follow
+    DB_PROTOCOL_SAILBOT_DATA      = 10,  ///< SailBot specific data (for now GPS and direction)
+    DB_PROTOCOL_TDMA_KEEP_ALIVE   = 11,  ///< Sent by the DotBot periodically to keep the connection alive, if there is nothing else to send.
+    DB_PROTOCOL_TDMA_UPDATE_TABLE = 12,  ///< Receive new timings for the TDMA table
+    DB_PROTOCOL_TDMA_SYNC_FRAME   = 13,  ///< Sent by the gateway at the begining of a TDMA frame, if there is nothing else to send.
+
 } command_type_t;
 
 /// Application type
@@ -100,6 +104,16 @@ typedef struct __attribute__((packed)) {
     uint8_t                   length;                         ///< Number of waypoints
     protocol_gps_coordinate_t coordinates[DB_MAX_WAYPOINTS];  ///< Array containing a list of GPS coordinates
 } protocol_gps_waypoints_t;
+
+///< DotBot protocol TDMA table update [all units are in microseconds]
+typedef struct __attribute__((packed)) {
+    uint32_t frame_period;       ///< duration of a full TDMA frame
+    uint32_t rx_start;           ///< start to listen for packets
+    uint16_t rx_duration;        ///< duration of the RX period
+    uint32_t tx_start;           ///< start of slot for transmission
+    uint16_t tx_duration;        ///< duration of the TX period
+    uint32_t next_period_start;  ///< time until the start of the next TDMA frame
+} protocol_tdma_table_t;
 
 //=========================== public ===========================================
 
