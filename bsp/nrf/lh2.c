@@ -764,6 +764,31 @@ void _fill_hash_table(uint16_t *hash_table);
  */
 void _update_lfsr_checkpoints(uint8_t polynomial, uint32_t bits, uint32_t count);
 
+/**
+ * @brief checks an SPI capture for signs of Qualysis Mocap pulses interference.
+ *        returns true if interference is found, returns false otherwise
+ *
+ * @param[in] arr: pointer to the array with the SPI capture to check
+ */
+int _check_mocap_interference(uint8_t *arr) {
+
+    // Qualysis Mocap cameras pulse IR light modulated with a regular square wave at 1Mhz.
+    // At the 32Mhz speed we sample the SPI, that corresponds to an alternating 0xFF,0xFF,0xFF,0x00,0x00,0x00 pattern
+
+    // Check only the bottom half of the array, that should be enough to catch an error.
+    for (int i = 0; i < SPI_BUFFER_SIZE/2; i++) {  
+        // Check for 3 consecutive 0xFF
+        if (arr[i] == 0xFF && arr[i + 1] == 0xFF && arr[i + 2] == 0xFF) {
+            return true;  // Error for 3 consecutive 0xFF
+        }
+        // Check for 3 consecutive 0x00
+        if (arr[i] == 0x00 && arr[i + 1] == 0x00 && arr[i + 2] == 0x00) {
+            return true;  // Error for 3 consecutive 0x00
+        }
+    }
+    return false;  // No error found
+}
+
 //=========================== public ===========================================
 
 void db_lh2_init(db_lh2_t *lh2, const gpio_t *gpio_d, const gpio_t *gpio_e) {
@@ -838,6 +863,7 @@ void db_lh2_process_raw_data(db_lh2_t *lh2) {
     if (_lh2_vars.data.count <= 0) {
         return;
     }
+    
 
     // Get value before it's overwritten by the ringbuffer.
     uint8_t temp_spi_bits[SPI_BUFFER_SIZE * 2] = { 0 };  // The temp buffer has to be 128 long because _demodulate_light() expects it to be so
@@ -850,6 +876,15 @@ void db_lh2_process_raw_data(db_lh2_t *lh2) {
     if (!_get_from_spi_ring_buffer(&_lh2_vars.data, temp_spi_bits, &temp_timestamp)) {
         return;
     }
+
+    // Check if Qualysis Mocap data is interfering with the SPI capture
+    #if defined(LH2_MOCAP_FILTER)
+    if (_check_mocap_interference(temp_spi_bits)) {
+        NRF_P0->OUTSET = 1 << 29;
+        return; // if a qualysis pulse caused a false spi trigger, leave the function.
+    }
+    #endif
+
     // perform the demodulation + poly search on the received packets
     // convert the SPI reading to bits via zero-crossing counter demodulation and differential/biphasic manchester decoding
     uint64_t temp_bits_sweep = _demodulate_light(temp_spi_bits);
@@ -860,6 +895,7 @@ void db_lh2_process_raw_data(db_lh2_t *lh2) {
 
     // If there was an error with the polynomial, leave without updating anything
     if (temp_selected_polynomial == LH2_POLYNOMIAL_ERROR_INDICATOR) {
+        NRF_P0->OUTSET = 1 << 24;
         return;
     }
 
@@ -910,6 +946,17 @@ void db_lh2_process_location(db_lh2_t *lh2) {
 
                 // Mark the data point as processed
                 lh2->data_ready[sweep][basestation] = DB_LH2_PROCESSED_DATA_AVAILABLE;
+
+
+                if (lh2->locations[sweep][basestation].selected_polynomial == 1 || lh2->locations[sweep][basestation].selected_polynomial == 0){
+
+                if (!( ((45994 - 1000 < lfsr_loc_temp) && (45994 + 1000 > lfsr_loc_temp)) || ((82415 - 1000 < lfsr_loc_temp) && (82415 + 1000 > lfsr_loc_temp)) )){
+                  NRF_P0->OUTSET = 1 << 23;
+                  }
+                  else{
+                    NRF_P0->OUTSET = 1 << 22;
+                  }
+                }
             }
         }
     }
@@ -1332,6 +1379,11 @@ uint8_t _determine_polynomial(uint64_t chipsH1, int8_t *start_val) {
     uint64_t bits_to_compare                      = 0;
     int32_t  threshold                            = POLYNOMIAL_BIT_ERROR_INITIAL_THRESHOLD;
 
+    // if a Mocap system is present, tighten the minimum trehsold to more aggresively prune outliers.
+    #if defined(LH2_MOCAP_FILTER)
+    threshold                            = 0;
+    #endif
+
     // try polynomial vs. first buffer bits
     // this search takes 17-bit sequences and runs them forwards through the polynomial LFSRs.
     // if the remaining detected bits fit well with the chosen 17-bit sequence and a given polynomial, it is treated as "correct"
@@ -1384,6 +1436,10 @@ uint8_t _determine_polynomial(uint64_t chipsH1, int8_t *start_val) {
             break;
         }
     }
+    if ((selected_poly > 1) && (selected_poly != 0xff)){
+        NRF_P0->OUTSET = 1 << 28; // check if you got a spurious  extra polynomial.
+    }
+
     return selected_poly;
 }
 
@@ -1404,6 +1460,10 @@ uint32_t _reverse_count_p(uint8_t index, uint32_t bits) {
     bits                 = bits & 0x0001FFFF;  // initialize buffer to initial bits, masked
     uint32_t buffer_down = bits;
     uint32_t buffer_up   = bits;
+
+    if ((buffer_down == 0) || (buffer_up == 0)){
+        __NOP();
+    }
 
     uint32_t count_down      = 0;
     uint32_t count_up        = 0;
@@ -1497,6 +1557,10 @@ uint32_t _reverse_count_p(uint8_t index, uint32_t bits) {
         b1        = __builtin_popcount(buffer_up & polynomials_local) & 0x01;  // mask the buffer w/ the selected polynomial
         buffer_up = ((buffer_up << 1) | b1) & (0x0001FFFF);
         count_up++;
+
+        if ((buffer_down == 0) || (buffer_up == 0)){
+        __NOP();
+    }
     }
     return count_up;
 }

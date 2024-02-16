@@ -35,18 +35,68 @@ int main(void) {
     // Initialize the board core features (voltage regulator)
     db_board_init();
 
+    NRF_P0->DIRSET = 1 << 29;
+    NRF_P0->DIRSET = 1 << 28;
+    NRF_P0->DIRSET = 1 << 24;
+    NRF_P0->DIRSET = 1 << 23;
+    NRF_P0->DIRSET = 1 << 22;
     // Initialize the LH2
     db_lh2_init(&_lh2, &db_lh2_d, &db_lh2_e);
     db_lh2_start();
 
     while (1) {
         // wait until something happens e.g. an SPI interrupt
-        __WFE();
+        //__WFE();
         db_lh2_process_raw_data(&_lh2);
+        __NOP();
+        __NOP();
+        __NOP();
+        __NOP();
+        __NOP();
+        __NOP();
+        __NOP();
+        __NOP();
+        __NOP();
+        __NOP();
+        __NOP();
+        __NOP();
+        __NOP();
+        __NOP();
+        __NOP();
+        __NOP();
+        __NOP();
+        __NOP();
+        __NOP();
+        __NOP();
+        NRF_P0->OUTCLR = 1<<29;
+    NRF_P0->OUTCLR = 1<<28;
+    NRF_P0->OUTCLR = 1<<24;
 
         if (DB2_LH2_FULL_COMPUTATION) {
             // the location function has to be running all the time
             db_lh2_process_location(&_lh2);
+        __NOP();
+        __NOP();
+        __NOP();
+        __NOP();
+        __NOP();
+        __NOP();
+        __NOP();
+        __NOP();
+        __NOP();
+        __NOP();
+        __NOP();
+        __NOP();
+        __NOP();
+        __NOP();
+        __NOP();
+        __NOP();
+        __NOP();
+        __NOP();
+        __NOP();
+        __NOP();
+    NRF_P0->OUTCLR = 1<<23;
+    NRF_P0->OUTCLR = 1<<22;
         }
     }
 
