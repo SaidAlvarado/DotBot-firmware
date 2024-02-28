@@ -21,6 +21,8 @@
 #include "conf/dotbot_v2_config.h"
 #elif defined(BOARD_SAILBOT_V1)
 #include "conf/sailbot_v1_config.h"
+#elif defined(BOARD_LH2_MINI_MOTE)
+#include "conf/lh2_mini_mote_config.h"
 #elif defined(BOARD_NRF52840DK)
 #include "conf/nrf52840dk_config.h"
 #elif defined(BOARD_NRF52833DK)
@@ -93,6 +95,7 @@ static const gpio_t db_motors_pins[] = {
     { .port = DB_MOTOR_BIN2_PORT, .pin = DB_MOTOR_BIN2_PIN },
 };
 
+#ifdef DB_RPM_LEFT_PORT
 ///! Left wheel encoder pin
 static const gpio_t db_rpm_left_pin = {
     .port = DB_RPM_LEFT_PORT, .pin = DB_RPM_LEFT_PORT
@@ -102,6 +105,7 @@ static const gpio_t db_rpm_left_pin = {
 static const gpio_t db_rpm_right_pin = {
     .port = DB_RPM_RIGHT_PORT, .pin = DB_RPM_RIGHT_PORT
 };
+#endif
 
 #ifdef DB_QDEC_LEFT_A_PORT
 ///! Left wheel encoder pin A
