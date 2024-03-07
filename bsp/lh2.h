@@ -79,8 +79,11 @@ void db_lh2_process_raw_data(db_lh2_t *lh2);
  * @brief Compute the location based on raw data coming from the lighthouse
  *
  * @param[in]   lh2 pointer to the lh2 instance
+ * @param[out]  out_sweep which sweep was processed. Only valid if return == True
+ * @param[out]  out_basestation which basestation was processed. Only valid if return == True
+ * @return      True if a sweep was processed, False if no processed occured
  */
-void db_lh2_process_location(db_lh2_t *lh2);
+bool db_lh2_process_location(db_lh2_t *lh2, uint8_t *out_sweep, uint8_t *out_basestation);
 
 /**
  * @brief Start the LH2 frame acquisition

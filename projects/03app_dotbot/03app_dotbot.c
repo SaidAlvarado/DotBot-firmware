@@ -68,6 +68,8 @@ typedef struct {
     uint8_t                  lh2_update_counter;                 ///< Counter used to track when lh2 data were received and to determine if an advertizement packet is needed
     uint64_t                 device_id;                          ///< Device ID of the DotBot
     db_log_dotbot_data_t     log_data;
+    uint8_t                  out_sweep;
+    uint8_t                  out_basestation;
 } dotbot_vars_t;
 
 //=========================== variables ========================================
@@ -206,7 +208,8 @@ int main(void) {
 
         bool need_advertize = false;
         // Process available lighthouse data
-        db_lh2_process_location(&_dotbot_vars.lh2);
+
+        db_lh2_process_location(&_dotbot_vars.lh2, &_dotbot_vars.out_sweep, &_dotbot_vars.out_basestation);
 
         if (_dotbot_vars.update_lh2) {
             // Check if data is ready to send
@@ -214,15 +217,20 @@ int main(void) {
 
                 db_lh2_stop();
                 // Prepare the radio buffer
-                db_protocol_header_to_buffer(_dotbot_vars.radio_buffer, DB_BROADCAST_ADDRESS, DotBot, DB_PROTOCOL_DOTBOT_DATA);
-                memcpy(_dotbot_vars.radio_buffer + sizeof(protocol_header_t), &_dotbot_vars.direction, sizeof(int16_t));
-                // Add the LH2 sweep
+                db_protocol_header_to_buffer(_dotbot_vars.radio_buffer, DB_BROADCAST_ADDRESS, DotBot, DB_PROTOCOL_LH2_PROCESSED_DATA);
+                // Add the LH2 sweeps
+                protocol_lh2_processed_packet_t lh2_processed_packet;
                 for (uint8_t lh2_sweep_index = 0; lh2_sweep_index < LH2_SWEEP_COUNT; lh2_sweep_index++) {
-                    memcpy(_dotbot_vars.radio_buffer + sizeof(protocol_header_t) + sizeof(int16_t) + lh2_sweep_index * sizeof(db_lh2_raw_data_t), &_dotbot_vars.lh2.raw_data[lh2_sweep_index][0], sizeof(db_lh2_raw_data_t));
+                    // Copy data into the packet
+                    lh2_processed_packet.polynomial[lh2_sweep_index]    = _dotbot_vars.lh2.locations[lh2_sweep_index][0].selected_polynomial;
+                    lh2_processed_packet.lfsr_location[lh2_sweep_index] = _dotbot_vars.lh2.locations[lh2_sweep_index][0].lfsr_location;
                     // Mark the data as already sent
-                    _dotbot_vars.lh2.data_ready[lh2_sweep_index][0] = DB_LH2_NO_NEW_DATA;
+                    _dotbot_vars.lh2.data_ready[lh2_sweep_index][0]     = DB_LH2_NO_NEW_DATA;
                 }
-                size_t length = sizeof(protocol_header_t) + sizeof(int16_t) + sizeof(db_lh2_raw_data_t) * LH2_SWEEP_COUNT;
+
+                // Copy packet into the radio buffer
+                memcpy(_dotbot_vars.radio_buffer + sizeof(protocol_header_t), &lh2_processed_packet, sizeof(protocol_lh2_processed_packet_t));
+                size_t length = sizeof(protocol_header_t) + sizeof(protocol_lh2_processed_packet_t);
 
                 // Send the radio packet
                 db_radio_disable();

@@ -903,9 +903,9 @@ void db_lh2_process_raw_data(db_lh2_t *lh2) {
     lh2->data_ready[sweep][temp_selected_polynomial >> 1]                   = DB_LH2_RAW_DATA_AVAILABLE;
 }
 
-void db_lh2_process_location(db_lh2_t *lh2) {
+bool db_lh2_process_location(db_lh2_t *lh2, uint8_t *out_sweep, uint8_t *out_basestation) {
     if (_lh2_vars.data.count == 0) {
-        return;
+        return false;
     }
 
     //*********************************************************************************//
@@ -921,7 +921,7 @@ void db_lh2_process_location(db_lh2_t *lh2) {
     // stop the interruptions while you're reading the data.
     uint32_t temp_timestamp = 0;  // default timestamp
     if (!_get_from_spi_ring_buffer(&_lh2_vars.data, temp_spi_bits, &temp_timestamp)) {
-        return;
+        return false;
     }
     // perform the demodulation + poly search on the received packets
     // convert the SPI reading to bits via zero-crossing counter demodulation and differential/biphasic manchester decoding
@@ -933,7 +933,7 @@ void db_lh2_process_location(db_lh2_t *lh2) {
 
     // If there was an error with the polynomial, leave without updating anything
     if (temp_selected_polynomial == LH2_POLYNOMIAL_ERROR_INDICATOR) {
-        return;
+        return false;
     }
 
     // Figure in which of the two sweep slots we should save the new data.
@@ -951,7 +951,7 @@ void db_lh2_process_location(db_lh2_t *lh2) {
     if ((temp_bits_sweep >> (47 - temp_bit_offset)) == 0x000000) {
         // Mark the data as wrong and keep going
         lh2->data_ready[sweep][basestation] = DB_LH2_NO_NEW_DATA;
-        return;
+        return false;
     }
 
     // Compute and save the lsfr location.
@@ -974,6 +974,14 @@ void db_lh2_process_location(db_lh2_t *lh2) {
     lh2->locations[sweep][basestation].selected_polynomial = temp_selected_polynomial;
     // Mark the data point as processed
     lh2->data_ready[sweep][basestation] = DB_LH2_PROCESSED_DATA_AVAILABLE;
+
+    //====================================================================================//
+    //                                  Return Status                                     //
+    //====================================================================================//
+
+    *out_basestation = basestation;
+    *out_sweep = sweep;
+    return true;
 }
 
 //=========================== private ==========================================
