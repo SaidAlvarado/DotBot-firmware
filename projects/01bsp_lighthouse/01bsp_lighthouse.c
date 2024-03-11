@@ -23,6 +23,8 @@
 //=========================== variables ========================================
 
 static db_lh2_t _lh2;
+static uint8_t sweep;
+static uint8_t basestation;
 
 //=========================== main =============================================
 
@@ -42,7 +44,7 @@ int main(void) {
         __WFE();
 
         // the location function has to be running all the time
-        db_lh2_process_location(&_lh2);
+        db_lh2_process_location(&_lh2, &sweep, &basestation);
     }
 
     // one last instruction, doesn't do anything, it's just to have a place to put a breakpoint.

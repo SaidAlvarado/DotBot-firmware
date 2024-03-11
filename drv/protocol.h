@@ -37,6 +37,7 @@ typedef enum {
     DB_PROTOCOL_GPS_WAYPOINTS      = 9,   ///< List of GPS waypoints to follow
     DB_PROTOCOL_SAILBOT_DATA       = 10,  ///< SailBot specific data (for now GPS and direction)
     DB_PROTOCOL_LH2_PROCESSED_DATA = 11,  ///< Lighthouse 2 data processed at the DotBot
+    DB_PROTOCOL_ONELH_CALIB_DATA   = 12,  ///< OneLH-2D Homography matrix calculation
 } command_type_t;
 
 /// Application type
@@ -108,6 +109,12 @@ typedef struct __attribute__((packed)) {
     uint8_t  polynomial[2];     ///< selected poly is the polyomial # (between 0 and 31) that the demodulation code thinks the demodulated bits are a part of, initialize to error state
     uint32_t lfsr_location[2];  ///< LFSR location is the position in a given polynomial's LFSR that the decoded data is, initialize to error state
 } protocol_lh2_processed_packet_t;
+
+/// OneLH Calibration Homography (DB_PROTOCOL_ONELH_CALIB_DATA)
+typedef struct __attribute__((packed)) {
+    uint8_t basestation;  ///< which basestation is sending this homography matrix
+    float   H[9];         ///< Homography Matrix H[0] is the top left element of the matrix, elements go from left to right and then from top to bottom.
+} protocol_onelh_calib_data_t;
 
 //=========================== public ===========================================
 

@@ -182,7 +182,7 @@ int main(void) {
 #endif
     db_motors_init();
     db_radio_init(&radio_callback, DB_RADIO_BLE_1MBit);
-    db_radio_set_frequency(8);  // Set the RX frequency to 2408 MHz.
+    db_radio_set_frequency(28);  // Set the RX frequency to 2428 MHz.
     db_radio_rx();              // Start receiving packets.
 
     // Set an invalid heading since the value is unknown on startup.
