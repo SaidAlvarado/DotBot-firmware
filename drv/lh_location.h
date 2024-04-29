@@ -27,12 +27,12 @@ typedef enum {
 
 /// Calibration values for the oneLH-2D algorithm
 typedef struct __attribute__((packed)) {
-    float H[9];  ///< Homography matrix from LH2 angles to ground cartesian coordinates. order = {(0,0), (0,1), (0,2), (1,0), ..., (2,2)}
+    float H[3][3];  ///< Homography matrix from LH2 angles to ground cartesian coordinates. order = {(0,0), (0,1), (0,2), (1,0), ..., (2,2)}
 } db_one_lh_calibration_t;
 
 /// Calibration values for the twoLH-2D algorithm
 typedef struct __attribute__((packed)) {
-    float R[9];  ///< Rotation matrix of the LH basestation. order = {(0,0), (0,1), (0,2), (1,0), ..., (2,2)}
+    float R[3][3];  ///< Rotation matrix of the LH basestation. order = {(0,0), (0,1), (0,2), (1,0), ..., (2,2)}
     float t[3];  ///< Translation vector of the LH basestation. column vector
     float n[3];  ///< Normal vector of the ground plane. row vector
     float zeta;  ///< Zeta value of the twoLH-2D algorithm
@@ -62,7 +62,7 @@ typedef struct __attribute__((packed)) {
  * @param[out]  position pointer to the cartesian coordinates of the computed position
  * @return      True, new position computed. False, No position computed.
  */
-bool db_lh_loc_compute_position(db_lh2_t *lh2, uint8_t basestation, db_lh_loc_algorithm_t algorithm, db_cartesian_3D_vector_t position);
+bool db_lh_loc_compute_position(db_lh2_t *lh2, uint8_t basestation, db_lh_loc_algorithm_t algorithm, db_cartesian_3D_vector_t *position);
 
 /**
  * @brief Add a oneLH_2D algorithm calibration from a lighthouse.
@@ -70,7 +70,7 @@ bool db_lh_loc_compute_position(db_lh2_t *lh2, uint8_t basestation, db_lh_loc_al
  * @param[in]   calib pointer to the new calibration structure
  * @param[in]   basestation pointer to the lh2 instance
  */
-void db_lh_loc_add_oneLH_2D_calibration(db_one_lh_calibration_t *calib, uint8_t basestation);
+void db_lh_loc_set_oneLH2D_calibration(db_one_lh_calibration_t *new_calib, uint8_t basestation);
 
 /**
  * @brief Add a twoLH_2D algorithm calibration from a lighthouse
@@ -78,7 +78,7 @@ void db_lh_loc_add_oneLH_2D_calibration(db_one_lh_calibration_t *calib, uint8_t 
  * @param[in]   calib pointer to the new calibration structure
  * @param[in]   basestation pointer to the lh2 instance
  */
-void db_lh_loc_add_twoLH_2D_calibration(db_one_lh_calibration_t *calib, uint8_t basestation);
+void db_lh_loc_set_twoLH2D_calibration(db_two_lh_calibration_t *new_calib, uint8_t basestation);
 
 
 #endif 

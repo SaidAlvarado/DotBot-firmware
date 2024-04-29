@@ -40,6 +40,15 @@
     <file file_name="ism330.c" />
     <file file_name="../ism330.h" />
   </project>
+  <project Name="00drv_lh_location">
+    <configuration
+      Name="Common"
+      project_dependencies="00bsp_lh2(bsp)"
+      project_directory="lh_location"
+      project_type="Library" />
+    <file file_name="lh_location.c" />
+    <file file_name="../lh_location.h" />
+  </project>
   <project Name="00drv_lis2mdl">
     <configuration
       Name="Common"

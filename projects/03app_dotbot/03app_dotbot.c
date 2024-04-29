@@ -28,6 +28,7 @@
 #include "rgbled_pwm.h"
 #include "timer.h"
 #include "log_flash.h"
+#include "lh_location.h"
 
 //=========================== defines ==========================================
 
@@ -70,6 +71,9 @@ typedef struct {
     db_log_dotbot_data_t     log_data;
     uint8_t                  out_sweep;
     uint8_t                  out_basestation;
+    bool                     oneLH_calibration;  ///< Have we received a calibration from the gateway?
+    db_cartesian_3D_vector_t dotbot_position;    ///< current 2D position of the DotBot calculated by the oneLH_2D algorithm (z=1, not used.)
+    bool                     flag_tx_db_2D_pos;  ///< should we send the processed 2D position
 } dotbot_vars_t;
 
 //=========================== variables ========================================
@@ -94,6 +98,9 @@ static void _advertise(void);
 static void _compute_angle(const protocol_lh2_location_t *next, const protocol_lh2_location_t *origin, int16_t *angle);
 static void _update_control_loop(void);
 static void _update_lh2(void);
+static void _tx_lh2_processed_data(void);
+static void _tx_lh2_oneLH2D_data(void);
+static void _compute_lh2_oneLH2D_pos(void);
 
 //=========================== callbacks ========================================
 
@@ -161,7 +168,18 @@ static void radio_callback(uint8_t *pkt, uint8_t len) {
                 _dotbot_vars.control_mode = ControlAuto;
             }
         } break;
+        case DB_PROTOCOL_ONELH_CALIB_DATA:
+        {
+            protocol_onelh_calib_data_t *command = (protocol_onelh_calib_data_t *)cmd_ptr;
+
+            db_one_lh_calibration_t new_calib;
+            memcpy(new_calib.H, command->H, sizeof(float) * 9);
+            db_lh_loc_set_oneLH2D_calibration(&new_calib, command->basestation);
+            _dotbot_vars.oneLH_calibration = true;
+
+        } break;
         default:
+        __NOP();
             break;
     }
 }
@@ -183,7 +201,7 @@ int main(void) {
     db_motors_init();
     db_radio_init(&radio_callback, DB_RADIO_BLE_1MBit);
     db_radio_set_frequency(28);  // Set the RX frequency to 2428 MHz.
-    db_radio_rx();              // Start receiving packets.
+    db_radio_rx();               // Start receiving packets.
 
     // Set an invalid heading since the value is unknown on startup.
     // Control loop is stopped and advertize packets are sent
@@ -206,40 +224,21 @@ int main(void) {
     while (1) {
         __WFE();
 
-        bool need_advertize = false;
         // Process available lighthouse data
-
         db_lh2_process_location(&_dotbot_vars.lh2, &_dotbot_vars.out_sweep, &_dotbot_vars.out_basestation);
+
+        // Compute x,y position
+        if (_dotbot_vars.oneLH_calibration) {
+            _compute_lh2_oneLH2D_pos();
+        }
 
         if (_dotbot_vars.update_lh2) {
             // Check if data is ready to send
-            if (_dotbot_vars.lh2.data_ready[0][0] == DB_LH2_PROCESSED_DATA_AVAILABLE && _dotbot_vars.lh2.data_ready[1][0] == DB_LH2_PROCESSED_DATA_AVAILABLE) {
+            if (_dotbot_vars.oneLH_calibration && _dotbot_vars.flag_tx_db_2D_pos) {
+                _tx_lh2_oneLH2D_data();
 
-                db_lh2_stop();
-                // Prepare the radio buffer
-                db_protocol_header_to_buffer(_dotbot_vars.radio_buffer, DB_BROADCAST_ADDRESS, DotBot, DB_PROTOCOL_LH2_PROCESSED_DATA);
-                // Add the LH2 sweeps
-                protocol_lh2_processed_packet_t lh2_processed_packet;
-                for (uint8_t lh2_sweep_index = 0; lh2_sweep_index < LH2_SWEEP_COUNT; lh2_sweep_index++) {
-                    // Copy data into the packet
-                    lh2_processed_packet.polynomial[lh2_sweep_index]    = _dotbot_vars.lh2.locations[lh2_sweep_index][0].selected_polynomial;
-                    lh2_processed_packet.lfsr_location[lh2_sweep_index] = _dotbot_vars.lh2.locations[lh2_sweep_index][0].lfsr_location;
-                    // Mark the data as already sent
-                    _dotbot_vars.lh2.data_ready[lh2_sweep_index][0]     = DB_LH2_NO_NEW_DATA;
-                }
-
-                // Copy packet into the radio buffer
-                memcpy(_dotbot_vars.radio_buffer + sizeof(protocol_header_t), &lh2_processed_packet, sizeof(protocol_lh2_processed_packet_t));
-                size_t length = sizeof(protocol_header_t) + sizeof(protocol_lh2_processed_packet_t);
-
-                // Send the radio packet
-                db_radio_disable();
-                db_radio_tx(_dotbot_vars.radio_buffer, length);
-
-                db_lh2_start();
             } else {
-                _dotbot_vars.lh2_update_counter = (_dotbot_vars.lh2_update_counter + 1) & DB_LH2_COUNTER_MASK;
-                need_advertize                  = (_dotbot_vars.lh2_update_counter == DB_LH2_COUNTER_MASK);
+                _tx_lh2_processed_data();
             }
             _dotbot_vars.update_lh2 = false;
         }
@@ -249,7 +248,7 @@ int main(void) {
             _dotbot_vars.update_control_loop = false;
         }
 
-        if (_dotbot_vars.advertize && need_advertize) {
+        if (_dotbot_vars.advertize) {
             db_protocol_header_to_buffer(_dotbot_vars.radio_buffer, DB_BROADCAST_ADDRESS, DotBot, DB_PROTOCOL_ADVERTISEMENT);
             size_t length = sizeof(protocol_header_t);
             db_radio_disable();
@@ -358,4 +357,98 @@ static void _advertise(void) {
 
 static void _update_lh2(void) {
     _dotbot_vars.update_lh2 = true;
+}
+
+static void _tx_lh2_processed_data(void) {
+
+    // Check if data is ready to send
+    if (_dotbot_vars.lh2.data_ready[0][0] == DB_LH2_PROCESSED_DATA_AVAILABLE && _dotbot_vars.lh2.data_ready[1][0] == DB_LH2_PROCESSED_DATA_AVAILABLE) {
+
+        db_lh2_stop();
+        // Prepare the radio buffer
+        db_protocol_header_to_buffer(_dotbot_vars.radio_buffer, DB_BROADCAST_ADDRESS, DotBot, DB_PROTOCOL_LH2_PROCESSED_DATA);
+        // Add the LH2 sweeps
+        protocol_lh2_processed_packet_t lh2_processed_packet;
+        for (uint8_t lh2_sweep_index = 0; lh2_sweep_index < LH2_SWEEP_COUNT; lh2_sweep_index++) {
+            // Copy data into the packet
+            lh2_processed_packet.polynomial[lh2_sweep_index]    = _dotbot_vars.lh2.locations[lh2_sweep_index][0].selected_polynomial;
+            lh2_processed_packet.lfsr_location[lh2_sweep_index] = _dotbot_vars.lh2.locations[lh2_sweep_index][0].lfsr_location;
+            // Mark the data as already sent
+            _dotbot_vars.lh2.data_ready[lh2_sweep_index][0] = DB_LH2_NO_NEW_DATA;
+        }
+
+        // Copy packet into the radio buffer
+        memcpy(_dotbot_vars.radio_buffer + sizeof(protocol_header_t), &lh2_processed_packet, sizeof(protocol_lh2_processed_packet_t));
+        size_t length = sizeof(protocol_header_t) + sizeof(protocol_lh2_processed_packet_t);
+
+        // Send the radio packet
+        db_radio_disable();
+        db_radio_tx(_dotbot_vars.radio_buffer, length);
+
+        db_lh2_start();
+    }
+}
+
+static void _tx_lh2_oneLH2D_data(void) {
+
+    // Check if data exist to send
+    if (_dotbot_vars.dotbot_position.x >= 0 && _dotbot_vars.dotbot_position.y >= 0) {
+
+        db_protocol_header_to_buffer(_dotbot_vars.radio_buffer, DB_BROADCAST_ADDRESS, DotBot, DB_PROTOCOL_LH2_LOCATION);
+        // Add the LH2 sweeps
+        protocol_lh2_location_t lh2_location_packet;
+        lh2_location_packet.x = (uint32_t)_dotbot_vars.dotbot_position.x * 1000000U;
+        lh2_location_packet.y = (uint32_t)_dotbot_vars.dotbot_position.y * 1000000U;
+        lh2_location_packet.z = (uint32_t)_dotbot_vars.dotbot_position.z * 1000000U;
+
+        // Copy packet into the radio buffer
+        memcpy(_dotbot_vars.radio_buffer + sizeof(protocol_header_t), &lh2_location_packet, sizeof(protocol_lh2_location_t));
+        size_t length = sizeof(protocol_header_t) + sizeof(protocol_lh2_location_t);
+
+        // Send the radio packet
+        db_radio_disable();
+        db_radio_tx(_dotbot_vars.radio_buffer, length);
+
+        // Mark the data as already sent
+        _dotbot_vars.dotbot_position.x = -1;
+        _dotbot_vars.dotbot_position.y = -1;
+    }
+}
+
+static void _compute_lh2_oneLH2D_pos(void) {
+
+    // Check that there is data to process
+    if (_dotbot_vars.lh2.data_ready[0][0] == DB_LH2_PROCESSED_DATA_AVAILABLE && _dotbot_vars.lh2.data_ready[1][0] == DB_LH2_PROCESSED_DATA_AVAILABLE) {
+
+        // Compute the 2D position of the DotBot
+        bool code = db_lh_loc_compute_position(&_dotbot_vars.lh2, 0, DB_LH_LOC_ONELH_2D, &_dotbot_vars.dotbot_position);
+
+        // Check if the computation was a success
+        if (code) {
+            // everything is well, you may send this data
+            _dotbot_vars.flag_tx_db_2D_pos = true;
+
+            // define current position
+            protocol_lh2_location_t current_pos;
+            current_pos.x = (uint32_t)_dotbot_vars.dotbot_position.x * 1000000U;
+            current_pos.y = (uint32_t)_dotbot_vars.dotbot_position.y * 1000000U;
+            current_pos.z = (uint32_t)_dotbot_vars.dotbot_position.z * 1000000U;
+
+            int16_t angle = -1000;
+            // Compute the current angle
+            _compute_angle(&current_pos, &_dotbot_vars.last_location, &angle);
+            // Store it if it's valid
+            if (angle != DB_DIRECTION_INVALID) {
+                _dotbot_vars.last_location.x = current_pos.x;
+                _dotbot_vars.last_location.y = current_pos.y;
+                _dotbot_vars.last_location.z = current_pos.z;
+                _dotbot_vars.direction       = angle;
+
+            _dotbot_vars.update_control_loop = (_dotbot_vars.control_mode == ControlAuto);
+            }
+        } else {
+            // signal not to send invalid information
+            _dotbot_vars.flag_tx_db_2D_pos = false;
+        }
+    }
 }

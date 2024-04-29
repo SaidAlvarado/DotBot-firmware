@@ -26,6 +26,9 @@ static db_lh2_t _lh2;
 static uint8_t sweep;
 static uint8_t basestation;
 
+
+static const gpio_t dd = { .port = DB_LH2_D_PORT, .pin = 31 };
+static const gpio_t ee = { .port = DB_LH2_D_PORT, .pin = 28 };
 //=========================== main =============================================
 
 /**
@@ -36,7 +39,7 @@ int main(void) {
     db_board_init();
 
     // Initialize the LH2
-    db_lh2_init(&_lh2, &db_lh2_d, &db_lh2_e);
+    db_lh2_init(&_lh2, &dd, &ee);
     db_lh2_start();
 
     while (1) {
