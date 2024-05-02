@@ -203,8 +203,12 @@ void db_radio_tx(const uint8_t *tx_buffer, uint8_t length) {
         _radio_enable();
         NRF_RADIO->TASKS_TXEN = RADIO_TASKS_TXEN_TASKS_TXEN_Trigger << RADIO_TASKS_TXEN_TASKS_TXEN_Pos;
     }
-    radio_vars.state = RADIO_STATE_TX;
-    while (radio_vars.state != RADIO_STATE_TX) {}
+    // radio_vars.state = RADIO_STATE_TX;
+    // while (radio_vars.state != RADIO_STATE_TX) {}
+
+    NRF_RADIO->EVENTS_END = 0;
+    while (NRF_RADIO->EVENTS_END == 0){}
+
 }
 
 void db_radio_rx(void) {
