@@ -29,7 +29,7 @@
 #define RADIO_INTERRUPT_PRIORITY 1
 #endif
 
-#define RADIO_TIFS          1000U  ///< Inter frame spacing in us
+#define RADIO_TIFS          0U  ///< Inter frame spacing in us. zero means IFS is enforced by software, not the hardware
 #define RADIO_SHORTS_COMMON (RADIO_SHORTS_READY_START_Enabled << RADIO_SHORTS_READY_START_Pos) |                 \
                                 (RADIO_SHORTS_END_DISABLE_Enabled << RADIO_SHORTS_END_DISABLE_Pos) |             \
                                 (RADIO_SHORTS_ADDRESS_RSSISTART_Enabled << RADIO_SHORTS_ADDRESS_RSSISTART_Pos) | \
@@ -149,8 +149,7 @@ void db_radio_init(radio_cb_t callback, db_radio_ble_mode_t mode) {
     NRF_RADIO->RXADDRESSES = (RADIO_RXADDRESSES_ADDR0_Enabled << RADIO_RXADDRESSES_ADDR0_Pos);
 
     // Inter frame spacing in us
-    // TODO: Re add if it turns out it's necessary
-    // NRF_RADIO->TIFS = RADIO_TIFS;
+    NRF_RADIO->TIFS = RADIO_TIFS;
 
     // Enable Fast TX Ramp Up
     NRF_RADIO->MODECNF0 = (RADIO_MODECNF0_RU_Fast << RADIO_MODECNF0_RU_Pos) |
@@ -200,17 +199,12 @@ void db_radio_tx(const uint8_t *tx_buffer, uint8_t length) {
 
     if (radio_vars.state == RADIO_STATE_IDLE) {
         _radio_enable();
-        NRF_P1->OUTSET = 1 << 13;
-
+        NRF_RADIO->EVENTS_END = 0;
         NRF_RADIO->TASKS_TXEN = RADIO_TASKS_TXEN_TASKS_TXEN_Trigger << RADIO_TASKS_TXEN_TASKS_TXEN_Pos;
+        // Wait for transmission to end
+        while (NRF_RADIO->EVENTS_END == 0) {}
     }
-    // radio_vars.state = RADIO_STATE_TX;
-    // while (radio_vars.state != RADIO_STATE_TX) {}
-
-    NRF_RADIO->EVENTS_END = 0;
-    while (NRF_RADIO->EVENTS_END == 0){}
-
-    NRF_P1->OUTCLR = 1 << 13;
+    radio_vars.state = RADIO_STATE_RX;
 }
 
 void db_radio_rx(void) {
