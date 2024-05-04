@@ -25,7 +25,7 @@
 // TODO:
 // - Ignore all messages except the calibration one.
 // - Continuosly send Processed LH2 data until you receive the calibration packet.
-//    - Maybe make a getter that retrieves the last received LH2 packet (per basestation). and a status code whether you already got it, or no.
+//    - Maybe make a getter that retrieves the last received LH2 packet (per basestation). and a status code whether you already got it, or no.q
 //    - Make a getter that returns an enum UNCALIBRATED error when you try to fetch your current location from the lh_loc driver
 // - Then start sending XYZ position
 
