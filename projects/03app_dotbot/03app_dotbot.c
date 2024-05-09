@@ -28,6 +28,9 @@
 #include "rgbled_pwm.h"
 #include "timer.h"
 #include "log_flash.h"
+#include "qdec.h"
+// Include drivers for the motors
+#include "pid.h"
 
 //=========================== defines ==========================================
 
@@ -52,6 +55,22 @@
 #define DB_ANGULAR_SIDE_FACTOR  (1)    ///< Angular side factor
 #endif
 
+// QDEC defnintions
+#define QDEC_LEFT  0
+#define QDEC_RIGHT 1
+// PID definitions
+#define PID_SAMPLE_TIME_MS  10    ///< time between PID calculations
+#define DB_L_CM             10.0  ///< distance between wheels (cm)
+#define DB_WHEEL_D_CM       6.0   ///< Diameter of the wheels
+#define DB_WHEEL_CPR        12.0  ///< counts per resolution of the quadrature encoder
+#define DB_MOTOR_GEAR_RATIO 50.0  ///< Gear ratio of the DC motor
+
+typedef struct {
+    bool left_overflow;
+    bool right_overflow;
+} qdec_vars_t;
+
+// Local variables
 typedef struct {
     uint32_t                 ts_last_packet_received;            ///< Last timestamp in microseconds a control packet was received
     db_lh2_t                 lh2;                                ///< LH2 device descriptor
@@ -68,6 +87,7 @@ typedef struct {
     uint8_t                  lh2_update_counter;                 ///< Counter used to track when lh2 data were received and to determine if an advertizement packet is needed
     uint64_t                 device_id;                          ///< Device ID of the DotBot
     db_log_dotbot_data_t     log_data;
+    uint32_t                 update_pid;
 } dotbot_vars_t;
 
 //=========================== variables ========================================
@@ -85,13 +105,37 @@ static const db_rgbled_pwm_conf_t rgbled_pwm_conf = {
 };
 #endif
 
+static const qdec_conf_t qdec_left = {
+    .pin_a = &db_qdec_left_a_pin,
+    .pin_b = &db_qdec_left_b_pin,
+};
+
+static const qdec_conf_t qdec_right = {
+    .pin_a = &db_qdec_right_a_pin,
+    .pin_b = &db_qdec_right_b_pin,
+};
+
+static qdec_vars_t _qdec_vars = {
+    .left_overflow  = false,
+    .right_overflow = false,
+};
+
+static pid_t             _pid_left   = { 0 };
+static pid_t             _pid_right  = { 0 };
+static const pid_gains_t _pid_params = {
+    .kp = 3,
+    .ki = 3.5,
+    .kd = 0,
+};
+
 //=========================== prototypes =======================================
 
-static void _timeout_check(void);
+// static void _timeout_check(void);
 static void _advertise(void);
 static void _compute_angle(const protocol_lh2_location_t *next, const protocol_lh2_location_t *origin, int16_t *angle);
 static void _update_control_loop(void);
 static void _update_lh2(void);
+static void _update_pid(void);
 
 //=========================== callbacks ========================================
 
@@ -124,7 +168,37 @@ static void radio_callback(uint8_t *pkt, uint8_t len) {
             protocol_move_raw_command_t *command = (protocol_move_raw_command_t *)cmd_ptr;
             int16_t                      left    = (int16_t)(100 * ((float)command->left_y / INT8_MAX));
             int16_t                      right   = (int16_t)(100 * ((float)command->right_y / INT8_MAX));
-            db_motors_set_speed(left, right);
+            // Convert to forward speed and angular speed (or Y axis and X axis)
+            float joy_y = (left + right) / 2;
+            float joy_x = (left - right) / 2;
+            // Add dead zones and convert the range to cm/s
+
+            // Convert Y-axis between the ranges [5 - 40]cm/s
+            if (joy_y >= 15.) {
+                joy_y = 10 +  (joy_y - 10) * (70 - 10) / (100 - 10);
+            } else if (joy_y <= -15) {
+                joy_y = -10 +  (joy_y + 10) * (-70 + 10) / (-100 + 30);
+            } else {
+                joy_y = 0.0;
+            }
+            // Convert X-axis between the ranges [PI/4 - 2*PI]rad/s
+            if (joy_x >= 10.) {
+                joy_x = M_PI_4 + 7 * M_PI * (joy_x + 20) / 240;
+            } else if (joy_x <= -10) {
+                joy_x = -M_PI_4 + 7 * M_PI * (joy_x - 20) / 240;
+            } else {
+                joy_x = 0.0;
+            }
+
+
+
+            // Convert  angular speed to cm/s
+            joy_x *= DB_L_CM / 2;
+
+            // Convert back to left and right speeds
+            // db_motors_set_speed(left, right);
+            _pid_left.target  = joy_y + joy_x;
+            _pid_right.target = joy_y - joy_x;
         } break;
         case DB_PROTOCOL_CMD_RGB_LED:
         {
@@ -145,11 +219,16 @@ static void radio_callback(uint8_t *pkt, uint8_t len) {
             _dotbot_vars.update_control_loop = (_dotbot_vars.control_mode == ControlAuto);
         } break;
         case DB_PROTOCOL_CONTROL_MODE:
-            db_motors_set_speed(0, 0);
+            // db_motors_set_speed(0, 0);
+            _pid_left.target  = 0.0;
+            _pid_right.target = 0.0;
             break;
         case DB_PROTOCOL_LH2_WAYPOINTS:
         {
-            db_motors_set_speed(0, 0);
+            // db_motors_set_speed(0, 0);
+            _pid_left.target  = 0.0;
+            _pid_right.target = 0.0;
+
             _dotbot_vars.control_mode        = ControlManual;
             _dotbot_vars.waypoints.length    = (uint8_t)*cmd_ptr++;
             _dotbot_vars.waypoints_threshold = (uint32_t)((uint8_t)*cmd_ptr++ * 1000);
@@ -162,6 +241,10 @@ static void radio_callback(uint8_t *pkt, uint8_t len) {
         default:
             break;
     }
+}
+
+static void qdec_callback(void *ctx) {
+    *(bool *)ctx = true;
 }
 
 //=========================== main =============================================
@@ -178,6 +261,17 @@ int main(void) {
 #ifdef DB_RGB_LED_PWM_RED_PORT
     db_rgbled_pwm_init(&rgbled_pwm_conf);
 #endif
+
+    // Setup the QDEC + PID
+    db_qdec_init(QDEC_LEFT, &qdec_left, qdec_callback, (void *)&_qdec_vars.left_overflow);
+    db_qdec_init(QDEC_RIGHT, &qdec_right, qdec_callback, (void *)&_qdec_vars.right_overflow);
+    db_pid_init(&_pid_left, 0.0, 0.0,
+                _pid_params.kp, _pid_params.ki, _pid_params.kd,
+                -100.0, 100.0, PID_SAMPLE_TIME_MS, DB_PID_MODE_AUTO, DB_PID_DIRECTION_DIRECT);
+    db_pid_init(&_pid_right, 0.0, 0.0,
+                _pid_params.kp, _pid_params.ki, _pid_params.kd,
+                -100.0, 100.0, PID_SAMPLE_TIME_MS, DB_PID_MODE_AUTO, DB_PID_DIRECTION_DIRECT);
+
     db_motors_init();
     db_radio_init(&radio_callback, DB_RADIO_BLE_1MBit);
     db_radio_set_frequency(8);  // Set the RX frequency to 2408 MHz.
@@ -195,9 +289,10 @@ int main(void) {
     _dotbot_vars.device_id = db_device_id();
 
     db_timer_init();
-    db_timer_set_periodic_ms(0, DB_TIMEOUT_CHECK_DELAY_MS, &_timeout_check);
+    // db_timer_set_periodic_ms(0, DB_TIMEOUT_CHECK_DELAY_MS, &_timeout_check);
     db_timer_set_periodic_ms(1, DB_ADVERTIZEMENT_DELAY_MS, &_advertise);
     db_timer_set_periodic_ms(2, DB_LH2_UPDATE_DELAY_MS, &_update_lh2);
+    db_timer_set_periodic_ms(0, PID_SAMPLE_TIME_MS, &_update_pid);
     db_lh2_init(&_dotbot_vars.lh2, &db_lh2_d, &db_lh2_e);
     db_lh2_start();
 
@@ -247,6 +342,27 @@ int main(void) {
             db_radio_disable();
             db_radio_tx(_dotbot_vars.radio_buffer, length);
             _dotbot_vars.advertize = false;
+
+            printf("left: %f, right: %f\n", _pid_left.target, _pid_right.target);
+        }
+
+        if (_dotbot_vars.update_pid) {
+            // turn off flag
+            _dotbot_vars.update_pid = false;
+            // Update current input
+            _pid_left.input  = (db_qdec_read_and_clear(QDEC_LEFT) / (DB_WHEEL_CPR * DB_MOTOR_GEAR_RATIO) * M_PI * DB_WHEEL_D_CM) / (PID_SAMPLE_TIME_MS * 0.001);   // current left  speed of the motor in cm/s
+            _pid_right.input = (db_qdec_read_and_clear(QDEC_RIGHT) / (DB_WHEEL_CPR * DB_MOTOR_GEAR_RATIO) * M_PI * DB_WHEEL_D_CM) / (PID_SAMPLE_TIME_MS * 0.001);  // current right speed of the motor in cm/s
+            // Run the PID
+            db_pid_update(&_pid_left);
+            db_pid_update(&_pid_right);
+
+            // Get the result into the motors
+            if (abs((int)_pid_left.target) < 5 && abs((int)_pid_right.target) < 5) {
+                db_motors_set_speed(0, 0);
+
+            } else {
+                db_motors_set_speed((int16_t)_pid_left.output, (int16_t)_pid_right.output);
+            }
         }
     }
 }
@@ -337,12 +453,12 @@ static void _compute_angle(const protocol_lh2_location_t *next, const protocol_l
     }
 }
 
-static void _timeout_check(void) {
-    uint32_t ticks = db_timer_ticks();
-    if (ticks > _dotbot_vars.ts_last_packet_received + TIMEOUT_CHECK_DELAY_TICKS) {
-        db_motors_set_speed(0, 0);
-    }
-}
+// static void _timeout_check(void) {
+//     uint32_t ticks = db_timer_ticks();
+//     if (ticks > _dotbot_vars.ts_last_packet_received + TIMEOUT_CHECK_DELAY_TICKS) {
+//         db_motors_set_speed(0, 0);
+//     }
+// }
 
 static void _advertise(void) {
     _dotbot_vars.advertize = true;
@@ -350,4 +466,8 @@ static void _advertise(void) {
 
 static void _update_lh2(void) {
     _dotbot_vars.update_lh2 = true;
+}
+
+static void _update_pid(void) {
+    _dotbot_vars.update_pid = true;
 }
