@@ -967,6 +967,14 @@ void db_lh2_process_location(db_lh2_t *lh2) {
                                  temp_bits_sweep >> (47 - temp_bit_offset)) -
                              temp_bit_offset;
 
+
+    // Check that the count didn't fall on an illegal value
+    if (lfsr_loc_temp == 0) {
+        // Mark the data as wrong and keep going
+        lh2->data_ready[sweep][basestation] = DB_LH2_NO_NEW_DATA;
+        return;
+    }
+
     //*********************************************************************************//
     //                                 Store results                                   //
     //*********************************************************************************//
@@ -1492,7 +1500,7 @@ uint32_t _reverse_count_p(uint8_t index, uint32_t bits) {
         _end_buffers_local[i] = _end_buffers[index][i];
     }
 
-    while (buffer_up != _end_buffers_local[0])  // do until buffer reaches one of the saved states
+    while (buffer_up != 0x00 && buffer_down != 0x00)  // Check that the count has not fallen into an invalid state
     {
 
         //
@@ -1570,7 +1578,7 @@ uint32_t _reverse_count_p(uint8_t index, uint32_t bits) {
         buffer_up = ((buffer_up << 1) | b1) & (0x0001FFFF);
         count_up++;
     }
-    return count_up;
+    return 0;
 }
 
 void _lh2_pin_set_input(const gpio_t *gpio) {

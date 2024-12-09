@@ -28,7 +28,7 @@
 #define LH2_SWEEP_COUNT       2                          ///< Number of laser sweeps per basestations rotation
 
 // Un-comment the following line if you want to enable the Anti-Mocap fiter
-// #define LH2_MOCAP_FILTER 1   ///< Defined when the LH2 needs to coexits with a Qualysis Mocap system. It enables harsher anti-outlier filters
+#define LH2_MOCAP_FILTER 1   ///< Defined when the LH2 needs to coexits with a Qualysis Mocap system. It enables harsher anti-outlier filters
 
 /// LH2 data ready buffer state
 typedef enum {
